@@ -33,6 +33,10 @@ module.exports = {
         {
           from: 'src/data',
           to: 'data'
+        },
+        {
+          from: require.resolve('sql.js/dist/sql-wasm.wasm'),
+          to: 'sql-wasm.wasm'
         }
 
       ]
@@ -47,6 +51,7 @@ module.exports = {
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
       'process.env.PATREON_CLIENT_ID': JSON.stringify(process.env.PATREON_CLIENT_ID),
       'process.env.PATREON_REDIRECT_URI': JSON.stringify(process.env.PATREON_REDIRECT_URI),
+      LOCAL_DESKTOP_APP: JSON.stringify(process.env.LOCAL_DESKTOP_APP === 'true'),
     })
   ],
 

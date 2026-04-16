@@ -1,10 +1,14 @@
 {
-  "name": "Database Editor F1 Manager",
+  "name": "f1-manager-database-editor",
+  "productName": "F1 Manager Database Editor",
   "version": "3.5.10",
   "description": "A tool that will let you edit your save file from F1 Manager games",
-  "main": "main.js",
+  "main": "electron/main.js",
   "scripts": {
     "build": "webpack",
+    "build:desktop": "LOCAL_DESKTOP_APP=true NODE_ENV=production webpack",
+    "start:desktop": "npm run build:desktop && electron .",
+    "package:mac": "npm run build:desktop && electron-builder --mac dir --publish=never",
     "optimize:logos": "node scripts/optimize-team-logos.js"
   },
   "repository": "https://github.com/IUrreta/DatabaseEditor",
@@ -52,6 +56,29 @@
     "webpack-cli": "^5.1.4"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0"
+    "@playwright/test": "^1.57.0",
+    "electron": "^41.2.1",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.rgyjerry.f1-manager-database-editor",
+    "productName": "F1 Manager Database Editor",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "LICENSE",
+      "!node_modules/**/*"
+    ],
+    "npmRebuild": false,
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.utilities",
+      "identity": null
+    },
+    "asar": true
   }
 }

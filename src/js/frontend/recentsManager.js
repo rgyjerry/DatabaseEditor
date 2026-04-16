@@ -1,4 +1,5 @@
 import { get, set } from 'idb-keyval';
+import { isDesktopApp } from './desktopBridge.js';
 
 const DB_NAME = "SaveEditorDB";
 const STORE_NAME = "recentFileHandles";
@@ -20,6 +21,14 @@ function openDB() {
 }
 
 export async function saveHandleToRecents(handle) {
+    if (isDesktopApp()) {
+        const filePath = handle?.desktopPath || handle?.path;
+        if (filePath) {
+            await window.f1DbDesktop.rememberRecent(filePath);
+        }
+        return;
+    }
+
     let recents = (await get('recentFiles')) || [];
     
     recents = recents.filter(r => r.name !== handle.name);
@@ -34,10 +43,18 @@ export async function saveHandleToRecents(handle) {
 }
 
 export async function getRecentHandles() {
+    if (isDesktopApp()) {
+        return await window.f1DbDesktop.listRecents();
+    }
+
     return (await get('recentFiles')) || [];
 }
 
 export async function removeRecentHandle(name) {
+    if (isDesktopApp()) {
+        return await window.f1DbDesktop.forgetRecent(name);
+    }
+
     let recents = (await get('recentFiles')) || [];
     recents = recents.filter(r => r.name !== name);
     await set('recentFiles', recents);

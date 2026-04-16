@@ -43,6 +43,7 @@ import { createTeamReplacers, logos_configs, pretty_names } from "./teamReplacem
 import bootstrap from "bootstrap/dist/js/bootstrap.bundle.min.js";
 import { getRecentHandles, saveHandleToRecents, removeRecentHandle } from './recentsManager.js';
 import { initSeasonMods, syncAduoTpToggles, syncMods2025Dependencies, syncMods2026Dependencies, syncMods2026ApplyAllButtonState, updateMod2025Blocking, updateMod2026Blocking } from './seasonMods.js';
+import { getDesktopTier, isDesktopApp, openDesktopSaveFile, readDesktopRecentFile, saveDesktopFile, shouldUseDesktopMode } from './desktopBridge.js';
 
 
 
@@ -204,6 +205,16 @@ let isShowingNotification = false;
 const repoOwner = 'IUrreta';
 const repoName = 'DatabaseEditor';
 
+function applyDesktopModeUI() {
+    if (!shouldUseDesktopMode()) return;
+
+    document.body?.classList.add("desktop-app");
+    document.querySelector(".patreon-login")?.classList.add("d-none");
+    document.querySelector(".api-key-section")?.classList.add("d-none");
+    document.querySelector(".patreon-slide-up")?.classList.add("d-none");
+    document.querySelector("#patreonPill")?.classList.add("d-none");
+}
+
 
 
 (function () {
@@ -308,12 +319,14 @@ async function getPatchNotes() {
 // Patreon OAuth Logic
 if (patreonLoginButton) {
     patreonLoginButton.addEventListener('click', () => {
+        if (shouldUseDesktopMode()) return;
         window.location.href = '/api/auth/patreon/login';
     });
 }
 
 if (patreonToolLoginButton) {
     patreonToolLoginButton.addEventListener('click', () => {
+        if (shouldUseDesktopMode()) return;
         window.location.href = '/api/auth/patreon/login';
     });
 }
@@ -343,6 +356,15 @@ if (saveFileButton && saveFileInput) {
     });
 
     saveFileButton.addEventListener('click', async () => {
+        if (isDesktopApp()) {
+            const file = await openDesktopSaveFile();
+            if (file) {
+                await saveHandleToRecents(file);
+                await processSaveFile(file);
+            }
+            return;
+        }
+
         const ok = await confirmModal({
             title: "Warning about selecting your save file",
             body: "Selecting your save file this way (in stead of drag and drop) will not save your save in the Recents section. Are you sure you want to continue?",
@@ -358,6 +380,8 @@ if (saveFileButton && saveFileInput) {
 
 
 async function handleLogout() {
+    if (shouldUseDesktopMode()) return;
+
     try {
         const response = await fetch('/api/auth/patreon/logout');
 
@@ -378,6 +402,12 @@ async function handleLogout() {
  * @returns {Promise<{paidMember: boolean, tier: string, tierNumber?: number, whitelisted: boolean, isLoggedIn: boolean, user: {fullName: string}}>} An object containing the user's tier information.
  */
 export async function getUserTier() {
+    if (shouldUseDesktopMode()) {
+        const tier = getDesktopTier();
+        window.__USER_DATA__ = tier;
+        return tier;
+    }
+
     try {
         const response = await fetch('/api/me');
         const data = await response.json();
@@ -401,6 +431,8 @@ export async function getUserTier() {
 }
 
 async function validateSession() {
+    if (shouldUseDesktopMode()) return true;
+
     try {
         const res = await fetch("/api/check-cookie");
         const data = await res.json();
@@ -425,7 +457,7 @@ async function validateSession() {
 const urlParams = new URLSearchParams(window.location.search);
 const code = urlParams.get('code');
 
-if (code) {
+if (code && !shouldUseDesktopMode()) {
     console.log("There is code")
     // Clear the code from URL to prevent re-submission on refresh
     window.history.replaceState({}, document.title, window.location.pathname);
@@ -470,6 +502,21 @@ function updatePatreonUI(tier) {
 
     console.log("Updating Patreon UI with tier:", tier);
 
+    if (shouldUseDesktopMode()) {
+        hasPatreonThemeAccess = true;
+        patreonUnlockables?.classList.remove("d-none");
+        patreonThemes?.classList.remove("d-none");
+        document.getElementById("patreonStatusText").textContent = "Local Mac App";
+        document.querySelector(".user-name-and-logout-tool")?.classList.add("d-none");
+        patreonToolLoginButton?.classList.add("d-none");
+        document.querySelector(".api-key-section")?.classList.add("d-none");
+        document.querySelector("#createCustomNews")?.remove();
+        loadTheme();
+        manageNewsStatus(tier);
+        turningPointsFrequencyConfig?.classList.remove("d-none");
+        return;
+    }
+
     if (tier.paidMember) {
         patreonUnlockables.classList.remove("d-none");
         patreonThemes.classList.remove("d-none");
@@ -488,7 +535,7 @@ function updatePatreonUI(tier) {
     }
     syncNightlyThemeVisibility();
 
-    const hasCreateNewsAccess = tier?.tierNumber === 3 || tier?.tier === "Founder" || !!tier?.whitelisted;
+    const hasCreateNewsAccess = !shouldUseDesktopMode() && (tier?.tierNumber === 3 || tier?.tier === "Founder" || !!tier?.whitelisted);
     if (!hasCreateNewsAccess){
         //remove the button from the DOM entirely
         document.querySelector("#createCustomNews")?.remove();
@@ -1981,7 +2028,7 @@ function downloadExportedSave(command) {
 
     startDownloadSaveProgressSimulation();
 
-    downloadSaveWorkerHandler = (msg) => {
+    downloadSaveWorkerHandler = async (msg) => {
         if (!isDownloadingSave) return;
 
         const response = msg?.data;
@@ -2005,7 +2052,15 @@ function downloadExportedSave(command) {
                 throw new Error("Missing exported data");
             }
 
-            saveAs(new Blob([finalData], { type: "application/binary" }), filename);
+            if (isDesktopApp()) {
+                const result = await saveDesktopFile(filename, finalData);
+                if (result?.canceled) {
+                    resetDownloadSaveProgress();
+                    return;
+                }
+            } else {
+                saveAs(new Blob([finalData], { type: "application/binary" }), filename);
+            }
             finishDownloadSaveProgress();
         } catch (e) {
             console.error("Failed to download exported save:", e);
@@ -2393,6 +2448,8 @@ function checkGenerableNews(patreonTier) {
 
 
 async function checkOpenSlideUp() {
+    if (shouldUseDesktopMode()) return;
+
     const tier = await getUserTier();
     if (tier.paidMember) return;
 
@@ -2432,6 +2489,8 @@ function canShowPatreonModal(lastShown) {
 
 init_colors_dict()
 document.addEventListener('DOMContentLoaded', async () => {
+    applyDesktopModeUI();
+
     const hostname = window.location.hostname;
     const isNightly = hostname.includes("nightly");
     isNightlyHost = isNightly;
@@ -2489,7 +2548,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateToolbarThemeLogo();
     syncNightlyThemeVisibility();
 
-    updateRateLimitsDisplay();
+    if (!shouldUseDesktopMode()) {
+        updateRateLimitsDisplay();
+    }
 
     const storedVersion = localStorage.getItem('lastVersion'); // Última versión guardada
     versionPanel.textContent = `${versionNow}`;
@@ -2570,6 +2631,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 export async function updateRateLimitsDisplay() {
+  if (shouldUseDesktopMode()) return;
+
   try {
     const res = await fetch("/api/usage-today");
     if (!res.ok) return;
@@ -2654,6 +2717,25 @@ function populateRecentHandles(recents) {
         fileName.classList.add("file-name");
         fileName.textContent = handle.name;
         fileName.addEventListener("click", async () => {
+            if (isDesktopApp()) {
+                try {
+                    const file = await readDesktopRecentFile(handle);
+                    if (!file) return;
+                    handle.lastOpened = new Date();
+                    updateTimeLabel();
+                    await processSaveFile(file);
+                } catch (error) {
+                    console.error("Failed to open recent file:", error);
+                    await removeRecentHandle(handle.path);
+                    listItem.remove();
+                    if (recentList.children.length === 0) {
+                        const recentsContainer = document.querySelector(".recents-container");
+                        if (recentsContainer) recentsContainer.classList.add("d-none");
+                    }
+                }
+                return;
+            }
+
             const fileHandle = handle.handle;
             const hasPermission = await verifyPermission(fileHandle, false);
 
@@ -2687,7 +2769,7 @@ function populateRecentHandles(recents) {
         });
 
         lastOpened.addEventListener("click", async () => {
-            await removeRecentHandle(handle.name);
+            await removeRecentHandle(isDesktopApp() ? handle.path : handle.name);
             listItem.remove();
             if (recentList.children.length === 0) {
                 const recentsContainer = document.querySelector(".recents-container");

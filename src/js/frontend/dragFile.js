@@ -2,6 +2,7 @@
 import { gamePill, editorPill, setSaveName, new_update_notifications, setIsShowingNotification } from "./renderer.js";
 import { saveHandleToRecents, getRecentHandles } from "./recentsManager.js";
 import { Command } from "../backend/command.js";
+import { rememberDesktopFile, shouldUseDesktopMode } from "./desktopBridge.js";
 
 let carAnalysisUtils = null;
 export const dbWorker = new Worker(new URL('../backend/worker.js', import.meta.url));
@@ -43,14 +44,17 @@ export const handleDrop = async (event) => {
             if (handle) {
                 await saveHandleToRecents(handle);
                 const file = await handle.getFile();
+                await rememberDesktopFile(file);
                 await processSaveFile(file)
             } else {
                 const file = item.getAsFile();
+                await rememberDesktopFile(file);
                 await processSaveFile(file);
             }
         } catch (e) {
             console.error("Error with file handle:", e);
             const file = event.dataTransfer.files[0];
+            await rememberDesktopFile(file);
             await processSaveFile(file);
         }
     }
@@ -132,7 +136,9 @@ export async function processSaveFile(file) {
             // 6. Finalmente mostramos el editor
             editorPill.classList.remove("d-none");
             gamePill.classList.remove("d-none");
-            patreonPill.classList.remove("d-none");
+            if (!shouldUseDesktopMode()) {
+                patreonPill.classList.remove("d-none");
+            }
 
             const command = new Command("saveSelected", {});
             command.execute();

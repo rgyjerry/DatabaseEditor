@@ -13,6 +13,7 @@ import { marked } from 'marked';
 import TurndownService from "turndown";
 import DOMPurify from "dompurify";
 import bootstrap from "bootstrap/dist/js/bootstrap.bundle.min.js";
+import { shouldUseDesktopMode } from "./desktopBridge";
 
 const newsGrid = document.querySelector('.news-grid');
 const newsModalEl = document.getElementById('newsModal');
@@ -54,6 +55,10 @@ function isPaidNewsMember() {
 }
 
 function canUseGenAiForNews(news) {
+  if (shouldUseDesktopMode()) {
+    return false;
+  }
+
   if (news?.type === "turning_point_aduo") {
     return isPaidNewsMember();
   }
@@ -557,6 +562,9 @@ async function generateAndRenderArticle(news, newsList, label = "Generating", fo
     if (err.status === 429) {
       errorDiv.innerText = "Daily limit reached. Tomorrow you'll be able to generate more articles.";
       newsArticle.appendChild(errorDiv);
+    } else if (err.status === 501) {
+      errorDiv.innerText = err.message;
+      newsArticle.appendChild(errorDiv);
     } else {
       errorDiv.innerText = "Error generating article. Please try again.";
       newsArticle.appendChild(errorDiv);
@@ -890,8 +898,10 @@ function createNewsItemElement(news, index, newsAvailable, newsList, maxDate, is
       (!isTurning && window.__USER_DATA__?.paidMember === true) ||
       (isTurning && (window.__USER_DATA__?.tierNumber >= 2 || isAduoTurningPoint));
 
-    if (canUserRead) {
-      if (canUseGenAiForNews(news)) {
+    const canOpenArticle = !!news.text || !shouldUseDesktopMode();
+
+    if (canUserRead && canOpenArticle) {
+      if (!shouldUseDesktopMode() && canUseGenAiForNews(news)) {
         readActions.appendChild(contextButton);
       }
       readActions.appendChild(readButton);
@@ -3160,6 +3170,12 @@ async function contextualizeSeasonReview(newData) {
 
 
 async function askGenAI(messages, opts = {}) {
+  if (shouldUseDesktopMode()) {
+    const error = new Error("AI article generation is disabled in the local Mac app.");
+    error.status = 501;
+    throw error;
+  }
+
   const response = await fetch("/api/ask-openai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
